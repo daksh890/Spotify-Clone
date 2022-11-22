@@ -1,5 +1,5 @@
 import { fetchRequest } from "../api";
-import { ENDPOINT, logout } from "../common";
+import { ENDPOINT, logout, SECTIONTYPE } from "../common";
 
 const onProfileClick = (event) => {
   event.stopPropagation();
@@ -28,8 +28,11 @@ const loadUserProfile = async () => {
   profileButton.addEventListener("click", onProfileClick);
 };
 
-const onPlaylistItemClicked = (event) => {
-  console.log(event.target);
+const onPlaylistItemClicked = (event, id) => {
+  // console.log(event.target);
+  const section = { type: SECTIONTYPE.PLAYLIST, playlist: id };
+  history.pushState(section, "", `playlist/${id}`);
+  loadSections(section);
 };
 
 const loadPlaylist = async (endpoint, elementId) => {
@@ -44,7 +47,9 @@ const loadPlaylist = async (endpoint, elementId) => {
       "bg-dark-secondary rounded p-4 hover:cursor-pointer hover:bg-light-dark";
     playlistItem.id = id;
     playlistItem.setAttribute("data-type", "playlist");
-    playlistItem.addEventListener("click", onPlaylistItemClicked);
+    playlistItem.addEventListener("click", (event) =>
+      onPlaylistItemClicked(event, id)
+    );
 
     const [image] = images;
     playlistItem.innerHTML = `<img
@@ -86,12 +91,105 @@ const fillContentForDashboard = () => {
   pageContent.innerHTML = innerHTML;
 };
 
-const loadSections = (section) => {};
+const formatTime = (duration) => {
+  const min = Math.floor(duration / 60_000);
+  const sec = ((duration % 6_000) / 1000).toFixed(0);
+  const formattedTime =
+    sec == 60 ? min + 1 + ":00" : min + ":" + (sec < 10 ? "0" : "") + sec;
+  return formattedTime;
+};
+
+const loadPlaylistTracks = ({ tracks }) => {
+  const trackSections = document.querySelector("#tracks");
+  let trackNo = 1;
+  for (let tarckItem of tracks.items) {
+    let { id, artists, name, album, duration_ms: duration } = tarckItem.track;
+    let track = document.createElement("section");
+    track.className =
+      "track p-1 grid grid-cols-[50px_2fr_1fr_50px] items-center justify-items-start gap-4 rounded-md text-secondary hover:bg-light-dark";
+    let image = album.images.find((img) => img.height === 64);
+    track.innerHTML = `
+    <p class="justify-self-center">${trackNo++}</p>
+    <section class="grid grid-cols-[auto_1fr] place-items-center gap-2">
+      <img class="h-8 w-8" src="${image.url}" alt="${name}" />
+      <article class="flex flex-col">
+        <h2 class="text-xl text-primary">${name}</h2>
+        <p class="text-sm">${Array.from(artists, (artist) => artist.name).join(
+          ", "
+        )}</p>
+      </article>
+    </section>
+    <p>${album.name}</p>
+    <p>${formatTime(duration)}</p>
+    `;
+    trackSections.appendChild(track);
+  }
+};
+
+const fillContentforPlaylist = async (playlistId) => {
+  const playlist = await fetchRequest(`${ENDPOINT.playlist}/${playlistId}`);
+  const pageContent = document.querySelector("#page-content");
+  pageContent.innerHTML = `
+    <header id="playlist-header" class="px-8 py-4">
+    <nav>
+      <ul
+        class="grid grid-cols-[50px_2fr_1fr_50px] gap-4 text-secondary"
+      >
+        <li class="justify-self-center">#</li>
+        <li>Title</li>
+        <li>Album</li>
+        <li>⏱️</li>
+      </ul>
+    </nav>
+    </header>
+    <section class=" text-secondary px-8" id="tracks">
+    </section>
+  `;
+  // console.log(playlist);
+  loadPlaylistTracks(playlist);
+};
+
+const onContentScroll = (event) => {
+  const { scrollTop } = event.target;
+  const header = document.querySelector(".header");
+  if (scrollTop >= header.offsetHeight) {
+    header.classList.add("sticky", "top-0", "bg-dark-secondary");
+    header.classList.remove("bg-transparent");
+  } else {
+    header.classList.remove("sticky", "top-0", "bg-dark-secondary");
+    header.classList.add("bg-transparent");
+  }
+
+  if (history.state.type === SECTIONTYPE.PLAYLIST) {
+    const playlistHeader = document.querySelector("#playlist-header");
+    if (scrollTop >= playlistHeader.offsetHeight) {
+      playlistHeader.classList.add("sticky", `top-[${header.offsetHeight}]px`);
+    }
+  }
+};
+
+const loadSections = (section) => {
+  if (section.type === SECTIONTYPE.DASHBOARD) {
+    fillContentForDashboard();
+    loadPlaylists();
+  } else if (section.type === SECTIONTYPE.PLAYLIST) {
+    // load playlist element
+    fillContentforPlaylist(section.playlist);
+  }
+
+  document
+    .querySelector(".content")
+    .removeEventListener("scroll", onContentScroll);
+  document
+    .querySelector(".content")
+    .addEventListener("scroll", onContentScroll);
+};
 
 document.addEventListener("DOMContentLoaded", () => {
   loadUserProfile();
-  fillContentForDashboard();
-  loadPlaylists();
+  const section = { type: SECTIONTYPE.DASHBOARD };
+  history.pushState(section, "", "");
+  loadSections(section);
   document.addEventListener("click", () => {
     const profileMenu = document.querySelector("#profile-menu");
     if (!profileMenu.classList.contains("hidden")) {
@@ -99,15 +197,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.querySelector(".content").addEventListener("scroll", (event) => {
-    const { scrollTop } = event.target;
-    const header = document.querySelector(".header");
-    if (scrollTop >= header.offsetHeight) {
-      header.classList.add("sticky", "top-0", "bg-dark-secondary");
-      header.classList.remove("bg-transparent");
-    } else {
-      header.classList.remove("sticky", "top-0", "bg-dark-secondary");
-      header.classList.add("bg-transparent");
-    }
+  window.addEventListener("popstate", (event) => {
+    loadSections(event.state);
   });
 });
